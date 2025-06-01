@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Connect - Messenger Style</title>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/i18next@23.15.1/dist/umd/i18next.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.2.0/crypto-js.js"></script>
+    <style>
+        :root {
+            --gradient-start: #00c4ff;
+            --gradient-end: #ff69b4;
+        }
+        body {
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+        }
+        .message-bubble {
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        .message-bubble:hover .message-actions {
+            opacity: 1;
+        }
+        .message-actions {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            position: absolute;
+            top: -20px;
+            right: 10px;
+            background: white;
+            border-radius: 20px;
+            padding: 5px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        .chat-header {
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+        }
+        .input-area {
+            background: white;
+            border-radius: 25px;
+            padding: 10px 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .sidebar {
+            transition: transform 0.3s ease-in-out;
+            background: white;
+        }
+        .dark .sidebar {
+            background: #1a1a1a;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+                position: fixed;
+                top: 0;
+                left: 0;
+                height: 100%;
+                z-index: 20;
+            }
+            .sidebar-open {
+                transform: translateX(0);
+            }
+        }
+        .emoji, .sticker {
+            display: inline-block;
+            width: 1.5rem;
+            height: 1.5rem;
+            vertical-align: middle;
+        }
+        .sticker {
+            max-width: 100px;
+        }
+        .picker {
+            max-height: 300px;
+            overflow-y: auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+            position: absolute;
+            bottom: 60px;
+            right: 20px;
+            padding: 10px;
+            width: 320px;
+        }
+        .dark .picker {
+            background: #2a2a2a;
+        }
+        .picker-search {
+            width: 100%;
+            padding: 8px;
+            border-radius: 20px;
+            border: 1px solid #ddd;
+            margin-bottom: 10px;
+        }
+        .drop-zone {
+            border: 2px dashed #ddd;
+            border-radius: 15px;
+            padding: 10px;
+            text-align: center;
+            color: #666;
+            margin: 10px 0;
+        }
+        .drop-zone.dragover {
+            background: #e5e7eb;
+        }
+        @keyframes slideIn {
+            from { transform: translateY(10px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .message-enter {
+            animation: slideIn 0.3s ease-out;
+        }
+        .notification {
+            animation: slideIn 0.5s ease-out, fadeOut 3s 2s ease-in forwards;
+        }
+        @keyframes fadeOut {
+            to { opacity: 0; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex p-4">
+    <button id="menu-toggle" class="md:hidden fixed top-4 left-4 p-2 bg-white text-gray-800 rounded-full z-20 shadow">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+    </button>
+    <div class="flex w-full max-w-7xl mx-auto rounded-2xl shadow-2xl overflow-hidden">
+        <!-- Sidebar -->
+        <div id="sidebar" class="w-80 p-4 sidebar">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800 dark:text-white" data-i18n="groups">Groups</h2>
+                <div class="flex gap-2">
+                    <select id="language-select" class="p-1 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white">
+                        <option value="en">English</option>
+                        <option value="vi">Tiếng Việt</option>
+                    </select>
+                    <button id="theme-toggle" class="p-2 rounded-full bg-gray-100 dark:bg-gray-700" title="Toggle theme">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" id="theme-icon">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <input id="group-search" type="text" placeholder="Search groups..." data-i18n-placeholder="search_groups"
+                   class="w-full p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[var(--gradient-start)]">
+            <div id="group-list" class="space-y-2 max-h-[calc(100vh-500px)] overflow-y-auto mt-4"></div>
+            <div class="mt-4">
+                <input id="group-name-input" type="text" placeholder="New group name" data-i18n-placeholder="new_group_name"
+                       class="w-full p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[var(--gradient-start)]">
+                <select id="group-type" class="mt-2 w-full p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white">
+                    <option value="public" data-i18n="public">Public</option>
+                    <option value="private" data-i18n="private">Private</option>
+                </select>
+                <input id="custom-theme-color" type="color" class="mt-2 w-full p-2 rounded-lg" title="Custom Theme Color" value="#00c4ff">
+                <button id="create-group-btn" class="mt-2 w-full px-4 py-2 gradient-bg text-white rounded-full hover:opacity-90 transition" data-i18n="create_group">
+                    Create Group
+                </button>
+            </div>
+            <div class="mt-4 text-sm text-gray-600 dark:text-gray-400">
+                <span id="online-users">0 users online</span>
+            </div>
+            <button id="members-btn" class="mt-2 w-full px-4 py-2 gradient-bg text-white rounded-full hover:opacity-90 transition" data-i18n="view_members">View Members</button>
+            <button id="activity-btn" class="mt-2 w-full px-4 py-2 gradient-bg text-white rounded-full hover:opacity-90 transition" data-i18n="view_activity">View Activity</button>
+            <button id="stats-btn" class="mt-2 w-full px-4 py-2 gradient-bg text-white rounded-full hover:opacity-90 transition" data-i18n="view_stats">View Stats</button>
+            <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mt-4">
+                <input id="notifications-enabled" type="checkbox" checked class="h-4 w-4 text-[var(--gradient-start)]">
+                <span data-i18n="enable_notifications">Enable Notifications</span>
+            </label>
+        </div>
+        <!-- Chat Area -->
+        <div class="flex-1 flex flex-col bg-white dark:bg-gray-900">
+            <div class="chat-header p-4 flex justify-between items-center text-white">
+                <div class="flex items-center gap-3">
+                    <img src="https://via.placeholder.com/40" class="avatar" alt="Group Avatar">
+                    <h1 class="text-lg font-semibold" id="current-group">Select a group to chat</h1>
+                </div>
+                <div class="flex gap-2">
+                    <input id="message-search" type="text" placeholder="Search messages..." data-i18n-placeholder="search_messages"
+                           class="p-2 rounded-full bg-white/20 text-white placeholder-white/70 focus:outline-none focus:ring-2 focus:ring-white">
+                    <button id="video-call-btn" class="p-2 bg-white/20 rounded-full hover:bg-white/30" title="Start Video Call">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14m-3 6h8a2 2 0 002-2V6a2 2 0 00-2-2H4a2 2 0 00-2 2v12a2 2 0 002 2h8z" />
+                        </svg>
+                    </button>
+                    <button id="voice-call-btn" class="p-2 bg-white/20 rounded-full hover:bg-white/30" title="Start Voice Call">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                        </svg>
+                    </button>
+                    <span class="text-sm" id="user-status">Not signed in</span>
+                </div>
+            </div>
+            <div id="search-results" class="hidden p-2 bg-white dark:bg-gray-800 rounded-lg"></div>
+            <div id="pinned-message" class="hidden bg-gray-100 dark:bg-gray-700 p-3 text-sm text-gray-800 dark:text-gray-200"></div>
+            <div id="typing-indicator" class="hidden px-4 py-2 text-sm text-gray-500 dark:text-gray-400">Someone is typing...</div>
+            <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-2"></div>
+            <div class="flex justify-center">
+                <button id="load-more-btn" class="hidden px-4 py-2 gradient-bg text-white rounded-full hover:opacity-90" data-i18n="load_more">Load More</button>
+            </div>
+            <div id="notification" class="hidden fixed bottom-20 right-4 gradient-bg text-white p-3 rounded-lg shadow-lg"></div>
+            <form id="message-form" class="p-4 input-area flex flex-col gap-3 relative mx-4 mb-4">
+                <div id="draft-indicator" class="hidden text-sm text-gray-500">Draft saved...</div>
+                <div id="drop-zone" class="drop-zone">Drag and drop files here</div>
+                <div class="flex items-center gap-2">
+                    <input id="username-input" type="text" placeholder="Your name" data-i18n-placeholder="your_name" required
+                           class="p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[var(--gradient-start)] w-1/4">
+                    <input id="message-input" type="text" placeholder="Type a message..." data-i18n-placeholder="type_message" required
+                           class="flex-1 p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[var(--gradient-start)]">
+                    <button type="button" id="emoji-btn" class="p-2 text-gray-600 dark:text-gray-300">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </button>
+                    <div id="emoji-picker" class="hidden picker">
+                        <input type="text" class="picker-search" placeholder="Search emojis..." data-i18n-placeholder="search_emojis">
+                        <div id="emoji-list" class="grid grid-cols-6 gap-2"></div>
+                        <button id="load-more-emojis" class="w-full p-2 gradient-bg text-white rounded-full hover:opacity-90" data-i18n="load_more">Load More</button>
+                    </div>
+                    <button type="button" id="sticker-btn" class="p-2 text-gray-600 dark:text-gray-300">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                    </button>
+                    <div id="sticker-picker" class="hidden picker">
+                        <input type="text" class="picker-search" placeholder="Search stickers..." data-i18n-placeholder="search_stickers">
+                        <div id="sticker-list" class="grid grid-cols-4 gap-2"></div>
+                        <button id="load-more-stickers" class="w-full p-2 gradient-bg text-white rounded-full hover:opacity-90" data-i18n="load_more">Load More</button>
+                    </div>
+                    <label class="flex items-center cursor-pointer">
+                        <input id="file-input" type="file" accept="image/*,video/*,.pdf,.doc,.docx" multiple class="hidden">
+                        <svg class="w-6 h-6 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 002.828 2.828l6.586-6.586a4 4 0 00-5.656-5.656l-6.586 6.586a6 6 0 008.485 8.485l6.586-6.586" />
+                        </svg>
+                    </label>
+                    <button type="button" id="record-btn" class="p-2 text-gray-600 dark:text-gray-300">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                        </svg>
+                    </button>
+                    <button type="button" id="reply-btn" class="p-2 text-gray-600 dark:text-gray-300 hidden">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6-6m0 0l6 6" />
+                        </svg>
+                    </button>
+                    <button type="submit" class="p-2 gradient-bg text-white rounded-full hover:opacity-90">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                        </svg>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- Modals -->
+    <div id="members-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg max-w-md w-full">
+            <h3 class="text-lg font-bold text-gray-800 dark:text-white" data-i18n="group_members">Group Members</h3>
+            <div id="members-list" class="space-y-2 max-h-64 overflow-y-auto"></div>
+            <button id="close-members-btn" class="mt-4 w-full px-4 py-2 gradient-bg text-white rounded-full hover:opacity-90" data-i18n="close">Close</button>
+        </div>
+    </div>
+    <div id="activity-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg max-w-md w-full">
+            <h3 class="text-lg font-bold text-gray-800 dark:text-white" data-i18n="group_activity">Group Activity</h3>
+            <div id="activity-list" class="space-y-2 max-h-64 overflow-y-auto"></div>
+            <button id="close-activity-btn" class="mt-4 w-full px-4 py-2 gradient-bg text-white rounded-full hover:opacity-90" data-i18n="close">Close</button>
+        </div>
+    </div>
+    <div id="stats-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg max-w-md w-full">
+            <h3 class="text-lg font-bold text-gray-800 dark:text-white" data-i18n="group_stats">Group Statistics</h3>
+            <div id="stats-content" class="space-y-2 max-h-64 overflow-y-auto"></div>
+            <button id="close-stats-btn" class="mt-4 w-full px-4 py-2 gradient-bg text-white rounded-full hover:opacity-90" data-i18n="close">Close</button>
+        </div>
+    </div>
+    <div id="video-call" class="hidden fixed inset-0 bg-black/80 flex flex-wrap gap-4 p-4 z-30"></div>
+    <div id="voice-call" class="hidden fixed inset-0 bg-black/80 flex flex-col gap-4 p-4 z-30"></div>
+
+    <script>
+        i18next.init({
+            lng: 'en',
+            resources: {
+                en: {
+                    translation: {
+                        groups: 'Groups',
+                        search_groups: 'Search groups...',
+                        new_group_name: 'New group name',
+                        public: 'Public',
+                        private: 'Private',
+                        create_group: 'Create Group',
+                        view_members: 'View Members',
+                        view_activity: 'View Activity',
+                        view_stats: 'View Stats',
+                        enable_notifications: 'Enable Notifications',
+                        search_messages: 'Search messages...',
+                        load_more: 'Load More',
+                        your_name: 'Your name',
+                        type_message: 'Type a message...',
+                        send: 'Send',
+                        group_members: 'Group Members',
+                        group_activity: 'Group Activity',
+                        group_stats: 'Group Statistics',
+                        close: 'Close',
+                        edit: 'Edit',
+                        delete: 'Delete',
+                        pin: 'Pin',
+                        forward: 'Forward',
+                        reply: 'Reply',
+                        block: 'Block',
+                        promote_mod: 'Promote to Mod',
+                        kick: 'Kick',
+                        end_call: 'End Call',
+                        failed_to_access_microphone: 'Failed to access microphone',
+                        failed_to_access_camera: 'Failed to access camera/microphone',
+                        incorrect_password: 'Incorrect password',
+                        new_message_from: 'New message from {{username}} in {{groupName}}',
+                        new_message: 'New Message',
+                        offline_message_saved: 'Message saved offline, will sync when online',
+                        offline_file_saved: 'File saved offline, will sync when online',
+                        message_forwarded: 'Message forwarded to group {{groupId}}',
+                        invalid_group_id: 'Invalid group ID',
+                        pinned_by: 'Pinned by {{username}}',
+                        download_file: 'Download File',
+                        edit_message: 'Edit your message:',
+                        user_promoted: 'User promoted to {{role}}',
+                        user_kicked: 'User kicked from group',
+                        confirm_block: 'Block this user? Their messages will be hidden.',
+                        set_password: 'Set group password:',
+                        select_group_to_forward: 'Enter group ID to forward to: {{groups}}',
+                        draft_saved: 'Draft saved...',
+                        send_sticker: 'Send Sticker',
+                        end_voice_call: 'End Voice Call',
+                        search_emojis: 'Search emojis...',
+                        search_stickers: 'Search stickers...',
+                        like: 'Like'
+                    }
+                },
+                vi: {
+                    translation: {
+                        groups: 'Nhóm',
+                        search_groups: 'Tìm kiếm nhóm...',
+                        new_group_name: 'Tên nhóm mới',
+                        public: 'Công khai',
+                        private: 'Riêng tư',
+                        create_group: 'Tạo nhóm',
+                        view_members: 'Xem thành viên',
+                        view_activity: 'Xem hoạt động',
+                        view_stats: 'Xem thống kê',
+                        enable_notifications: 'Bật thông báo',
+                        search_messages: 'Tìm kiếm tin nhắn...',
+                        load_more: 'Tải thêm',
+                        your_name: 'Tên của bạn',
+                        type_message: 'Nhập tin nhắn...',
+                        send: 'Gửi',
+                        group_members: 'Thành viên nhóm',
+                        group_activity: 'Hoạt động nhóm',
+                        group_stats: 'Thống kê nhóm',
+                        close: 'Đóng',
+                        edit: 'Chỉnh sửa',
+                        delete: 'Xóa',
+                        pin: 'Ghim',
+                        forward: 'Chuyển tiếp',
+                        reply: 'Trả lời',
+                        block: 'Chặn',
+                        promote_mod: 'Thăng cấp thành Mod',
+                        kick: 'Đuổi',
+                        end_call: 'Kết thúc cuộc gọi',
+                        failed_to_access_microphone: 'Không thể truy cập micro',
+                        failed_to_access_camera: 'Không thể truy cập camera/micro',
+                        incorrect_password: 'Mật khẩu sai',
+                        new_message_from: 'Tin nhắn mới từ {{username}} trong {{groupName}}',
+                        new_message: 'Tin nhắn mới',
+                        offline_message_saved: 'Tin nhắn được lưu offline, sẽ đồng bộ khi online',
+                        offline_file_saved: 'File được lưu offline, sẽ đồng bộ khi online',
+                        message_forwarded: 'Tin nhắn đã chuyển tiếp đến nhóm {{groupId}}',
+                        invalid_group_id: 'ID nhóm không hợp lệ',
+                        pinned_by: 'Được ghim bởi {{username}}',
+                        download_file: 'Tải file',
+                        edit_message: 'Chỉnh sửa tin nhắn của bạn:',
+                        user_promoted: 'Người dùng được thăng cấp thành {{role}}',
+                        user_kicked: 'Người dùng đã bị đuổi khỏi nhóm',
+                        confirm_block: 'Chặn người dùng này? Tin nhắn của họ sẽ bị ẩn.',
+                        set_password: 'Đặt mật khẩu nhóm:',
+                        select_group_to_forward: 'Nhập ID nhóm để chuyển tiếp: {{groups}}',
+                        draft_saved: 'Bản nháp đã được lưu...',
+                        send_sticker: 'Gửi Sticker',
+                        end_voice_call: 'Kết thúc cuộc gọi thoại',
+                        search_emojis: 'Tìm kiếm emoji...',
+                        search_stickers: 'Tìm kiếm sticker...',
+                        like: 'Thích'
+                    }
+                }
+            }
+        }, () => updateTranslations());
+
+        function updateTranslations() {
+            document.querySelectorAll('[data-i18n]').forEach(elem => {
+                elem.textContent = i18next.t(elem.getAttribute('data-i18n'));
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(elem => {
+                elem.placeholder = i18next.t(elem.getAttribute('data-i18n-placeholder'));
+            });
+        }
+
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            databaseURL: "YOUR_DATABASE_URL",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const database = firebase.database();
+        const storage = firebase.storage();
+        const messaging = firebase.messaging.isSupported() ? firebase.messaging() : null;
+
+        const messagesDiv = document.getElementById('messages');
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('message-input');
+        const usernameInput = document.getElementById('username-input');
+        const fileInput = document.getElementById('file-input');
+        const recordBtn = document.getElementById('record-btn');
+        const replyBtn = document.getElementById('reply-btn');
+        const groupList = document.getElementById('group-list');
+        const groupSearch = document.getElementById('group-search');
+        const groupNameInput = document.getElementById('group-name-input');
+        const groupType = document.getElementById('group-type');
+        const customThemeColor = document.getElementById('custom-theme-color');
+        const createGroupBtn = document.getElementById('create-group-btn');
+        const currentGroupTitle = document.getElementById('current-group');
+        const notificationDiv = document.getElementById('notification');
+        const notificationsEnabled = document.getElementById('notifications-enabled');
+        const onlineUsers = document.getElementById('online-users');
+        const themeToggle = document.getElementById('theme-toggle');
+        const themeIcon = document.getElementById('theme-icon');
+        const typingIndicator = document.getElementById('typing-indicator');
+        const emojiBtn = document.getElementById('emoji-btn');
+        const emojiPicker = document.getElementById('emoji-picker');
+        const stickerBtn = document.getElementById('sticker-btn');
+        const stickerPicker = document.getElementById('sticker-picker');
+        const loadMoreBtn = document.getElementById('load-more-btn');
+        const userStatus = document.getElementById('user-status');
+        const menuToggle = document.getElementById('menu-toggle');
+        const sidebar = document.getElementById('sidebar');
+        const membersBtn = document.getElementById('members-btn');
+        const membersModal = document.getElementById('members-modal');
+        const membersList = document.getElementById('members-list');
+        const closeMembersBtn = document.getElementById('close-members-btn');
+        const activityBtn = document.getElementById('activity-btn');
+        const activityModal = document.getElementById('activity-modal');
+        const activityList = document.getElementById('activity-list');
+        const closeActivityBtn = document.getElementById('close-activity-btn');
+        const statsBtn = document.getElementById('stats-btn');
+        const statsModal = document.getElementById('stats-modal');
+        const statsContent = document.getElementById('stats-content');
+        const closeStatsBtn = document.getElementById('close-stats-btn');
+        const videoCallBtn = document.getElementById('video-call-btn');
+        const videoCallDiv = document.getElementById('video-call');
+        const voiceCallBtn = document.getElementById('voice-call-btn');
+        const voiceCallDiv = document.getElementById('voice-call');
+        const messageSearch = document.getElementById('message-search');
+        const searchResults = document.getElementById('search-results');
+        const languageSelect = document.getElementById('language-select');
+        const pinnedMessage = document.getElementById('pinned-message');
+        const draftIndicator = document.getElementById('draft-indicator');
+        const dropZone = document.getElementById('drop-zone');
+        const emojiList = document.getElementById('emoji-list');
+        const stickerList = document.getElementById('sticker-list');
+        const loadMoreEmojis = document.getElementById('load-more-emojis');
+        const loadMoreStickers = document.getElementById('load-more-stickers');
+
+        let currentGroupId = null;
+        let messageListener = null;
+        let userId = null;
+        let isTyping = false;
+        let lastMessageKey = null;
+        let mediaRecorder = null;
+        let replyTo = null;
+        let peer = null;
+        let videoStreams = [];
+        let voiceStreams = [];
+        let userRole = 'member';
+        const messagesPerPage = 20;
+        const offlineMessages = JSON.parse(localStorage.getItem('offlineMessages')) || [];
+        let drafts = JSON.parse(localStorage.getItem('drafts')) || {};
+        let encryptionKey = null;
+        let emojiPage = 0;
+        let stickerPage = 0;
+        const itemsPerPage = 20;
+
+        const stickers = [
+            { url: 'https://stickers.gg/sticker/pixel-cat-1.png', category: 'Anime' },
+            { url: 'https://stickers.gg/sticker/pixel-dog-2.png', category: 'Meme' },
+            { url: 'https://stickers.gg/sticker/pixel-rainbow-3.png', category: 'Pepe' },
+            { url: 'https://stickers.gg/sticker/pixel-star-4.png', category: 'Cute' },
+            { url: 'https://stickers.gg/sticker/valorant-gg-1.png', category: 'Valorant' }
+        ];
+        const emojis = [
+            { url: 'https://run.vn/wp-content/uploads/2023/03/emoji-cute-1.jpg', name: 'Cute1' },
+            { url: 'https://run.vn/wp-content/uploads/2023/03/emoji-cute-2.jpg', name: 'Cute2' },
+            { url: 'https://run.vn/wp-content/uploads/2023/03/emoji-cute-3.jpg', name: 'Cute3' },
+            { url: 'https://run.vn/wp-content/uploads/2023/03/emoji-cute-4.jpg', name: 'Cute4' },
+            { url: 'https://run.vn/wp-content/uploads/2023/03/emoji-cute-5.jpg', name: 'Cute5' },
+            { url: 'https://run.vn/wp-content/uploads/2023/03/emoji-cute-6.jpg', name: 'Cute6' }
+        ];
+
+        auth.signInAnonymously().then((userCredential) => {
+            userId = userCredential.user.uid;
+            userStatus.textContent = `Signed in as Guest`;
+            loadGroups();
+            if (messaging) requestNotificationPermission();
+            initializePeer();
+            syncOfflineMessages();
+            checkUserRole();
+            loadDraft();
+            generateEncryptionKey();
+        }).catch((error) => {
+            console.error('Auth error:', error);
+            userStatus.textContent = `Error signing in`;
+        });
+
+        function generateEncryptionKey() {
+            encryptionKey = CryptoJS.lib.WordArray.random(32).toString();
+            localStorage.setItem(`encryptionKey_${userId}`, encryptionKey);
+        }
+
+        function encryptMessage(text) {
+            return CryptoJS.AES.encrypt(text, encryptionKey).toString();
+        }
+
+        function decryptMessage(encryptedText) {
+            try {
+                const bytes = CryptoJS.AES.decrypt(encryptedText, encryptionKey);
+                return bytes.toString(CryptoJS.enc.Utf8);
+            } catch (err) {
+                return '[Decryption Failed]';
+            }
+        }
+
+        function initializePeer() {
+            peer = new Peerjs(userId, { host: 'peerjs-server.herokuapp.com', secure: true, port: 443 });
+            peer.on('open', () => console.log('PeerJS connected'));
+            peer.on('call', handleIncomingCall);
+        }
+
+        async function checkUserRole() {
+            if (currentGroupId) {
+                const roleSnapshot = await database.ref(`groups/${currentGroupId}/roles/${userId}`).once('value');
+                userRole = roleSnapshot.val() || 'member';
+            }
+        }
+
+        function requestNotificationPermission() {
+            if (notificationsEnabled.checked) {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted' && messaging) {
+                        messaging.getToken({ vapidKey: 'YOUR_VAPID_KEY' }).then(token => {
+                            database.ref(`users/${userId}/notificationToken`).set(token);
+                        }).catch(err => console.error('Notification token error:', err));
+                    }
+                });
+            }
+        }
+
+        notificationsEnabled.addEventListener('change', () => {
+            if (notificationsEnabled.checked && messaging) {
+                requestNotificationPermission();
+            } else {
+                database.ref(`users/${userId}/notificationToken`).remove();
+            }
+        });
+
+        let isDarkMode = localStorage.getItem('theme') === 'dark';
+        if (isDarkMode) {
+            document.documentElement.classList.add('dark');
+            themeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />';
+        }
+        themeToggle.addEventListener('click', () => {
+            isDarkMode = !isDarkMode;
+            document.documentElement.classList.toggle('dark');
+            localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+            themeIcon.innerHTML = isDarkMode
+                ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />'
+                : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />';
+        });
+
+        languageSelect.addEventListener('change', () => {
+            i18next.changeLanguage(languageSelect.value, () => updateTranslations());
+        });
+
+        menuToggle.addEventListener('click', () => sidebar.classList.toggle('sidebar-open'));
+
+        function loadEmojis(filter = '') {
+            emojiList.innerHTML = '';
+            const filteredEmojis = emojis.filter(e => e.name.toLowerCase().includes(filter.toLowerCase()))
+                .slice(0, (emojiPage + 1) * itemsPerPage);
+            filteredEmojis.forEach(emoji => {
+                const img = document.createElement('img');
+                img.src = emoji.url;
+                img.className = 'emoji cursor-pointer hover:scale-110 transition';
+                img.alt = emoji.name;
+                img.addEventListener('click', () => {
+                    messageInput.value += `<img src="${emoji.url}" class="emoji" alt="${emoji.name}">`;
+                    emojiPicker.classList.add('hidden');
+                });
+                emojiList.appendChild(img);
+            });
+            loadMoreEmojis.style.display = filteredEmojis.length < emojis.length ? 'block' : 'none';
+        }
+
+        emojiBtn.addEventListener('click', () => {
+            emojiPicker.classList.toggle('hidden');
+            stickerPicker.classList.add('hidden');
+            loadEmojis();
+        });
+
+        emojiPicker.querySelector('.picker-search').addEventListener('input', (e) => {
+            emojiPage = 0;
+            loadEmojis(e.target.value);
+        });
+
+        loadMoreEmojis.addEventListener('click', () => {
+            emojiPage++;
+            loadEmojis(emojiPicker.querySelector('.picker-search').value);
+        });
+
+        function loadStickers(filter = '') {
+            stickerList.innerHTML = '';
+            const filteredStickers = stickers.filter(s => s.category.toLowerCase().includes(filter.toLowerCase()))
+                .slice(0, (stickerPage + 1) * itemsPerPage);
+            filteredStickers.forEach(sticker => {
+                const img = document.createElement('img');
+                img.src = sticker.url;
+                img.className = 'sticker cursor-pointer hover:scale-110 transition';
+                img.alt = sticker.category;
+                img.addEventListener('click', () => {
+                    sendSticker(sticker.url);
+                    stickerPicker.classList.add('hidden');
+                });
+                stickerList.appendChild(img);
+            });
+            loadMoreStickers.style.display = filteredStickers.length < stickers.length ? 'block' : 'none';
+        }
+
+        stickerBtn.addEventListener('click', () => {
+            stickerPicker.classList.toggle('hidden');
+            emojiPicker.classList.add('hidden');
+            loadStickers();
+        });
+
+        stickerPicker.querySelector('.picker-search').addEventListener('input', (e) => {
+            stickerPage = 0;
+            loadStickers(e.target.value);
+        });
+
+        loadMoreStickers.addEventListener('click', () => {
+            stickerPage++;
+            loadStickers(stickerPicker.querySelector('.picker-search').value);
+        });
+
+        async function sendSticker(stickerUrl) {
+            const messageData = {
+                username: usernameInput.value.trim(),
+                sticker: stickerUrl,
+                timestamp: Date.now(),
+                userId: userId,
+                replyTo: replyTo
+            };
+            await sendMessage(messageData);
+            replyTo = null;
+            replyBtn.classList.add('hidden');
+        }
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+        async function handleFiles(files) {
+            for (const file of files) {
+                const storageRef = storage.ref(`files/${currentGroupId}/${Date.now()}_${file.name}`);
+                try {
+                    const snapshot = await storageRef.put(file);
+                    const fileUrl = await snapshot.ref.getDownloadURL();
+                    const messageData = {
+                        username: usernameInput.value.trim(),
+                        file: fileUrl,
+                        timestamp: Date.now(),
+                        userId: userId,
+                        replyTo: replyTo
+                    };
+                    await sendMessage(messageData);
+                } catch (err) {
+                    saveOfflineMessage({ ...messageData, file });
+                }
+            }
+            fileInput.value = '';
+        }
+
+        let isRecording = false;
+        recordBtn.addEventListener('click', async () => {
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    const chunks = [];
+                    mediaRecorder.ondataavailable = e => chunks.push(e.data);
+                    mediaRecorder.onstop = async () => {
+                        const blob = new Blob(chunks, { type: 'audio/webm' });
+                        const storageRef = storage.ref(`audio/${currentGroupId}/${Date.now()}_audio.webm`);
+                        try {
+                            const snapshot = await storageRef.put(blob);
+                            const audioUrl = await snapshot.ref.getDownloadURL();
+                            const messageData = {
+                                username: usernameInput.value.trim(),
+                                audio: audioUrl,
+                                timestamp: Date.now(),
+                                userId: userId,
+                                replyTo: replyTo
+                            };
+                            await sendMessage(messageData);
+                        } catch (err) {
+                            saveOfflineMessage(messageData);
+                        }
+                        replyTo = null;
+                        replyBtn.classList.add('hidden');
+                    };
+                    mediaRecorder.start();
+                    isRecording = true;
+                    recordBtn.innerHTML = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>';
+                } catch (err) {
+                    console.error('Recording error:', err);
+                    notificationDiv.textContent = i18next.t('failed_to_access_microphone');
+                    notificationDiv.classList.remove('hidden');
+                    setTimeout(() => notificationDiv.classList.add('hidden'), 5000);
+                }
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                recordBtn.innerHTML = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>';
+            }
+        });
+
+        voiceCallBtn.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                voiceCallDiv.classList.remove('hidden');
+                const participant = document.createElement('div');
+                participant.className = 'voice-participant bg-gray-800 text-white p-4 rounded-lg flex items-center gap-2';
+                participant.innerHTML = `<img src="https://via.placeholder.com/40" class="avatar"><span>${usernameInput.value.trim()}</span>`;
+                voiceCallDiv.appendChild(participant);
+                voiceStreams.push(stream);
+                database.ref(`groups/${currentGroupId}/onlineUsers`).once('value', (snapshot) => {
+                    snapshot.forEach(child => {
+                        const peerId = child.key;
+                        if (peerId !== userId) {
+                            const call = peer.call(peerId, stream, { metadata: { type: 'voice' } });
+                            call.on('stream', remoteStream => {
+                                const remoteParticipant = document.createElement('div');
+                                remoteParticipant.className = 'voice-participant bg-gray-800 text-white p-4 rounded-lg flex items-center gap-2';
+                                remoteParticipant.innerHTML = `<img src="https://via.placeholder.com/40" class="avatar"><span>Guest</span>`;
+                                voiceCallDiv.appendChild(remoteParticipant);
+                            });
+                        }
+                    });
+                });
+                const closeBtn = document.createElement('button');
+                closeBtn.className = 'absolute top-4 right-4 p-2 bg-red-600 text-white rounded-full';
+                closeBtn.textContent = i18next.t('end_voice_call');
+                closeBtn.onclick = () => {
+                    voiceStreams.forEach(s => s.getTracks().forEach(t => t.stop()));
+                    voiceCallDiv.innerHTML = '';
+                    voiceCallDiv.classList.add('hidden');
+                    voiceStreams = [];
+                };
+                voiceCallDiv.appendChild(closeBtn);
+                logActivity(currentGroupId, `${usernameInput.value.trim()} started a voice call`);
+            } catch (err) {
+                console.error('Voice call error:', err);
+                notificationDiv.textContent = i18next.t('failed_to_access_microphone');
+                notificationDiv.classList.remove('hidden');
+                setTimeout(() => notificationDiv.classList.add('hidden'), 5000);
+            }
+        });
+
+        videoCallBtn.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                videoCallDiv.classList.remove('hidden');
+                const video = document.createElement('video');
+                video.srcObject = stream;
+                video.muted = true;
+                video.autoplay = true;
+                video.className = 'max-w-[45%] max-h-[45%] rounded-lg border-2 border-white';
+                videoCallDiv.appendChild(video);
+                videoStreams.push(stream);
+                database.ref(`groups/${currentGroupId}/onlineUsers`).once('value', (snapshot) => {
+                    snapshot.forEach(child => {
+                        const peerId = child.key;
+                        if (peerId !== userId) {
+                            const call = peer.call(peerId, stream);
+                            call.on('stream', remoteStream => {
+                                const remoteVideo = document.createElement('video');
+                                remoteVideo.srcObject = remoteStream;
+                                remoteVideo.autoplay = true;
+                                remoteVideo.className = 'max-w-[45%] max-h-[45%] rounded-lg border-2 border-white';
+                                videoCallDiv.appendChild(remoteVideo);
+                            });
+                        }
+                    });
+                });
+                const closeBtn = document.createElement('button');
+                closeBtn.className = 'absolute top-4 right-4 p-2 bg-red-600 text-white rounded-full';
+                closeBtn.textContent = i18next.t('end_call');
+                closeBtn.onclick = () => {
+                    videoStreams.forEach(s => s.getTracks().forEach(t => t.stop()));
+                    videoCallDiv.innerHTML = '';
+                    videoCallDiv.classList.add('hidden');
+                    videoStreams = [];
+                };
+                videoCallDiv.appendChild(closeBtn);
+                logActivity(currentGroupId, `${usernameInput.value.trim()} started a video call`);
+            } catch (err) {
+                console.error('Video call error:', err);
+                notificationDiv.textContent = i18next.t('failed_to_access_camera');
+                notificationDiv.classList.remove('hidden');
+                setTimeout(() => notificationDiv.classList.add('hidden'), 5000);
+            }
+        });
+
+        function handleIncomingCall(call) {
+            const isVoiceCall = call.metadata?.type === 'voice';
+            navigator.mediaDevices.getUserMedia(isVoiceCall ? { audio: true } : { video: true, audio: true }).then(stream => {
+                const container = isVoiceCall ? voiceCallDiv : videoCallDiv;
+                container.classList.remove('hidden');
+                if (isVoiceCall) {
+                    const participant = document.createElement('div');
+                    participant.className = 'voice-participant bg-gray-800 text-white p-4 rounded-lg flex items-center gap-2';
+                    participant.innerHTML = `<img src="https://via.placeholder.com/40" class="avatar"><span>${usernameInput.value.trim()}</span>`;
+                    container.appendChild(participant);
+                    voiceStreams.push(stream);
+                } else {
+                    const video = document.createElement('video');
+                    video.srcObject = stream;
+                    video.muted = true;
+                    video.autoplay = true;
+                    video.className = 'max-w-[45%] max-h-[45%] rounded-lg border-2 border-white';
+                    container.appendChild(video);
+                    videoStreams.push(stream);
+                }
+                call.answer(stream);
+                call.on('stream', remoteStream => {
+                    if (isVoiceCall) {
+                        const remoteParticipant = document.createElement('div');
+                        remoteParticipant.className = 'voice-participant bg-gray-800 text-white p-4 rounded-lg flex items-center gap-2';
+                        remoteParticipant.innerHTML = `<img src="https://via.placeholder.com/40" class="avatar"><span>Guest</span>`;
+                        container.appendChild(remoteParticipant);
+                    } else {
+                        const remoteVideo = document.createElement('video');
+                        remoteVideo.srcObject = remoteStream;
+                        remoteVideo.autoplay = true;
+                        remoteVideo.className = 'max-w-[45%] max-h-[45%] rounded-lg border-2 border-white';
+                        container.appendChild(remoteVideo);
+                    }
+                });
+                const closeBtn = document.createElement('button');
+                closeBtn.className = 'absolute top-4 right-4 p-2 bg-red-600 text-white rounded-full';
+                closeBtn.textContent = isVoiceCall ? i18next.t('end_voice_call') : i18next.t('end_call');
+                closeBtn.onclick = () => {
+                    (isVoiceCall ? voiceStreams : videoStreams).forEach(s => s.getTracks().forEach(t => t.stop()));
+                    container.innerHTML = '';
+                    container.classList.add('hidden');
+                    if (isVoiceCall) voiceStreams = []; else videoStreams = [];
+                };
+                container.appendChild(closeBtn);
+            }).catch(err => {
+                console.error('Call error:', err);
+                notificationDiv.textContent = isVoiceCall ? i18next.t('failed_to_access_microphone') : i18next.t('failed_to_access_camera');
+                notificationDiv.classList.remove('hidden');
+                setTimeout(() => notificationDiv.classList.add('hidden'), 5000);
+            });
+        }
+
+        function loadGroups() {
+            database.ref('groups').on('value', (snapshot) => {
+                groupList.innerHTML = '';
+                snapshot.forEach((child) => {
+                    const group = child.val();
+                    const groupId = child.key;
+                    const div = document.createElement('div');
+                    div.className = `flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${currentGroupId === groupId ? 'bg-gray-200 dark:bg-gray-600' : ''}`;
+                    div.innerHTML = `
+                        <img src="https://via.placeholder.com/40" class="avatar">
+                        <span class="flex-1">${group.name}</span>
+                        <span class="text-xs text-gray-500">${group.type}</span>
+                    `;
+                    div.onclick = () => selectGroup(groupId);
+                    groupList.appendChild(div);
+                });
+            });
+        }
+
+        async function selectGroup(groupId) {
+            if (messageListener) {
+                database.ref(`messages/${currentGroupId}`).off('child_added', messageListener);
+            }
+            currentGroupId = groupId;
+            const groupSnapshot = await database.ref(`groups/${groupId}`).once('value');
+            const group = groupSnapshot.val();
+            currentGroupTitle.textContent = group.name;
+            messagesDiv.innerHTML = '';
+            loadMessages();
+            checkUserRole();
+            loadDraft();
+            applyCustomTheme(group.color || '#00c4ff');
+        }
+
+        function loadMessages() {
+            messageListener = database.ref(`messages/${currentGroupId}`).orderByChild('timestamp').limitToLast(messagesPerPage).on('child_added', (snapshot) => {
+                const message = snapshot.val();
+                const messageId = snapshot.key;
+                if (!lastMessageKey) lastMessageKey = messageId;
+                displayMessage(message, messageId);
+            });
+        }
+
+        async function sendMessage(messageData) {
+            if (!currentGroupId) return;
+            messageData.content = encryptMessage(messageData.content || '');
+            await database.ref(`messages/${currentGroupId}`).push(messageData);
+            logActivity(currentGroupId, `${messageData.username} sent a message`);
+        }
+
+        function displayMessage(message, messageId) {
+            const isOwnMessage = message.userId === userId;
+            const div = document.createElement('div');
+            div.className = `flex gap-2 message-bubble ${isOwnMessage ? 'justify-end' : 'justify-start'}`;
+            let content = decryptMessage(message.content || '');
+            if (message.sticker) {
+                content += `<img src="${message.sticker}" class="sticker" alt="Sticker">`;
+            }
+            if (message.file) {
+                content += `<a href="${message.file}" target="_blank" class="text-blue-600 dark:text-blue-400">${i18next.t('download_file')}</a>`;
+            }
+            if (message.audio) {
+                content += `<audio controls src="${message.audio}" class="max-w-full"></audio>`;
+            }
+            if (message.replyTo) {
+                content = `<div class="reply-box text-sm bg-gray-200 dark:bg-gray-700 p-2 rounded">${message.replyTo}</div>${content}`;
+            }
+            div.innerHTML = `
+                ${!isOwnMessage ? `<img src="https://via.placeholder.com/40" class="avatar mt-2">` : ''}
+                <div class="${isOwnMessage ? 'bg-[var(--gradient-start)] text-white rounded-l-2xl rounded-tr-2xl' : 'bg-gray-100 dark:bg-gray-800 rounded-r-2xl rounded-tl-2xl'} p-3 max-w-md">
+                    <p class="font-semibold">${message.username}</p>
+                    <p>${content}</p>
+                    <p class="text-xs opacity-70">${new Date(message.timestamp).toLocaleTimeString()}</p>
+                    <div class="message-actions flex gap-2">
+                        <button class="like-btn" title="${i18next.t('like')}">👍</button>
+                        <button class="reply-btn" title="${i18next.t('reply')}">↩️</button>
+                        <button class="forward-btn" title="${i18next.t('forward')}">➡️</button>
+                    </div>
+                </div>
+            `;
+            div.querySelector('.like-btn').addEventListener('click', () => {
+                database.ref(`messages/${currentGroupId}/${messageId}/likes`).transaction(likes => (likes || 0) + 1);
+            });
+            div.querySelector('.reply-btn').addEventListener('click', () => {
+                replyTo = content.substring(0, 50) + (content.length > 50 ? '...' : '');
+                replyBtn.classList.remove('hidden');
+            });
+            div.querySelector('.forward-btn').addEventListener('click', () => {
+                const groupId = prompt(i18next.t('select_group_to_forward', { groups: 'Enter group ID' }));
+                if (groupId) {
+                    database.ref(`messages/${groupId}`).push(message);
+                    notificationDiv.textContent = i18next.t('message_forwarded', { groupId });
+                    notificationDiv.classList.remove('hidden');
+                    setTimeout(() => notificationDiv.classList.add('hidden'), 5000);
+                }
+            });
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        messageForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const messageData = {
+                username: usernameInput.value.trim(),
+                content: messageInput.value,
+                timestamp: Date.now(),
+                userId: userId,
+                replyTo: replyTo
+            };
+            try {
+                await sendMessage(messageData);
+                messageInput.value = '';
+                replyTo = null;
+                replyBtn.classList.add('hidden');
+                delete drafts[currentGroupId];
+                localStorage.setItem('drafts', JSON.stringify(drafts));
+                draftIndicator.classList.add('hidden');
+            } catch (err) {
+                saveOfflineMessage(messageData);
+            }
+        });
+
+        function saveOfflineMessage(messageData) {
+            offlineMessages.push(messageData);
+            localStorage.setItem('offlineMessages', JSON.stringify(offlineMessages));
+            notificationDiv.textContent = i18next.t('offline_message_saved');
+            notificationDiv.classList.remove('hidden');
+            setTimeout(() => notificationDiv.classList.add('hidden'), 5000);
+        }
+
+        async function syncOfflineMessages() {
+            for (const msg of offlineMessages) {
+                try {
+                    await sendMessage(msg);
+                } catch (err) {
+                    console.error('Sync error:', err);
+                }
+            }
+            offlineMessages.length = 0;
+            localStorage.setItem('offlineMessages', JSON.stringify(offlineMessages));
+        }
+
+        messageInput.addEventListener('input', () => {
+            if (currentGroupId) {
+                drafts[currentGroupId] = messageInput.value;
+                localStorage.setItem('drafts', JSON.stringify(drafts));
+                draftIndicator.textContent = i18next.t('draft_saved');
+                draftIndicator.classList.remove('hidden');
+                setTimeout(() => draftIndicator.classList.add('hidden'), 2000);
+            }
+        });
+
+        function loadDraft() {
+            if (currentGroupId && drafts[currentGroupId]) {
+                messageInput.value = drafts[currentGroupId];
+                draftIndicator.textContent = i18next.t('draft_saved');
+                draftIndicator.classList.remove('hidden');
+                setTimeout(() => draftIndicator.classList.add('hidden'), 2000);
+            }
+        }
+
+        function applyCustomTheme(color) {
+            document.documentElement.style.setProperty('--gradient-start', color);
+        }
+
+        function logActivity(groupId, activity) {
+            database.ref(`activity/${groupId}`).push({
+                activity,
+                timestamp: Date.now(),
+                userId: userId
+            });
+        }
+
+        membersBtn.addEventListener('click', async () => {
+            membersList.innerHTML = '';
+            const snapshot = await database.ref(`groups/${currentGroupId}/members`).once('value');
+            snapshot.forEach(child => {
+                const member = child.val();
+                const div = document.createElement('div');
+                div.className = 'flex items-center gap-2 p-2';
+                div.innerHTML = `
+                    <img src="https://via.placeholder.com/40" class="avatar">
+                    <span>${member.username} (${member.role})</span>
+                `;
+                membersList.appendChild(div);
+            });
+            membersModal.classList.remove('hidden');
+        });
+
+        closeMembersBtn.addEventListener('click', () => membersModal.classList.add('hidden'));
+
+        activityBtn.addEventListener('click', async () => {
+            activityList.innerHTML = '';
+            const snapshot = await database.ref(`activity/${currentGroupId}`).once('value');
+            snapshot.forEach(child => {
+                const activity = child.val();
+                const div = document.createElement('div');
+                div.className = 'p-2';
+                div.textContent = `${activity.activity} at ${new Date(activity.timestamp).toLocaleString()}`;
+                activityList.appendChild(div);
+            });
+            activityModal.classList.remove('hidden');
+        });
+
+        closeActivityBtn.addEventListener('click', () => activityModal.classList.add('hidden'));
+
+        statsBtn.addEventListener('click', async () => {
+            statsContent.innerHTML = '';
+            const messagesSnapshot = await database.ref(`messages/${currentGroupId}`).once('value');
+            const activitySnapshot = await database.ref(`activity/${currentGroupId}`).once('value');
+            const stats = {
+                totalMessages: messagesSnapshot.numChildren(),
+                totalActivities: activitySnapshot.numChildren()
+            };
+            statsContent.innerHTML = `
+                <p>Total Messages: ${stats.totalMessages}</p>
+                <p>Total Activities: ${stats.totalActivities}</p>
+            `;
+            statsModal.classList.remove('hidden');
+        });
+
+        closeStatsBtn.addEventListener('click', () => statsModal.classList.add('hidden'));
+
+        createGroupBtn.addEventListener('click', async () => {
+            const groupName = groupNameInput.value.trim();
+            const type = groupType.value;
+            const color = customThemeColor.value;
+            if (groupName) {
+                const groupRef = database.ref('groups').push();
+                await groupRef.set({
+                    name: groupName,
+                    type,
+                    color,
+                    createdBy: userId,
+                    createdAt: Date.now()
+                });
+                groupNameInput.value = '';
+                logActivity(groupRef.key, `${usernameInput.value.trim()} created the group`);
+            }
+        });
+
+        messageSearch.addEventListener('input', async () => {
+            const query = messageSearch.value.toLowerCase();
+            searchResults.innerHTML = '';
+            if (query.length < 3) {
+                searchResults.classList.add('hidden');
+                return;
+            }
+            const snapshot = await database.ref(`messages/${currentGroupId}`).once('value');
+            snapshot.forEach(child => {
+                const message = child.val();
+                const content = decryptMessage(message.content || '');
+                if (content.toLowerCase().includes(query)) {
+                    const div = document.createElement('div');
+                    div.className = 'p-2 border-b';
+                    div.textContent = `${message.username}: ${content}`;
+                    searchResults.appendChild(div);
+                }
+            });
+            searchResults.classList.remove('hidden');
+        });
+
+        groupSearch.addEventListener('input', () => {
+            const query = groupSearch.value.toLowerCase();
+            groupList.querySelectorAll('div').forEach(div => {
+                div.style.display = div.textContent.toLowerCase().includes(query) ? 'flex' : 'none';
+            });
+        });
+
+        messageInput.addEventListener('input', () => {
+            if (!isTyping) {
+                isTyping = true;
+                database.ref(`typing/${currentGroupId}/${userId}`).set(true);
+                setTimeout(() => {
+                    isTyping = false;
+                    database.ref(`typing/${currentGroupId}/${userId}`).remove();
+                }, 3000);
+            }
+        });
+
+        database.ref(`typing/${currentGroupId}`).on('value', snapshot => {
+            const typingUsers = Object.keys(snapshot.val() || {});
+            typingIndicator.textContent = typingUsers.length > 1 ? 'Multiple users are typing...' : 'Someone is typing...';
+            typingIndicator.classList.toggle('hidden', typingUsers.length === 0);
+        });
+
+        loadMoreBtn.addEventListener('click', () => {
+            if (lastMessageKey) {
+                database.ref(`messages/${currentGroupId}`).orderByChild('timestamp').endBefore(lastMessageKey).limitToLast(messagesPerPage).once('value', snapshot => {
+                    const messages = [];
+                    snapshot.forEach(child => {
+                        messages.push({ id: child.key, data: child.val() });
+                    });
+                    messages.reverse().forEach(m => displayMessage(m.data, m.id));
+                    lastMessageKey = messages.length > 0 ? messages[0].id : null;
+                    loadMoreBtn.classList.toggle('hidden', !lastMessageKey);
+                });
+            }
+        });
+
+        database.ref(`groups/${currentGroupId}/onlineUsers`).on('value', snapshot => {
+            onlineUsers.textContent = `${snapshot.numChildren()} users online`;
+        });
+
+        database.ref(`groups/${currentGroupId}/pinnedMessage`).on('value', snapshot => {
+            if (snapshot.val()) {
+                const pinned = snapshot.val();
+                pinnedMessage.innerHTML = `<p><strong>${i18next.t('pinned_by', { username: pinned.username })}:</strong> ${decryptMessage(pinned.content)}</p>`;
+                pinnedMessage.classList.remove('hidden');
+            } else {
+                pinnedMessage.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
